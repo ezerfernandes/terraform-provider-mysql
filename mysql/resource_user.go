@@ -34,7 +34,6 @@ func resourceUser() *schema.Resource {
 			"host": {
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
 				Default:  "localhost",
 			},
 
@@ -259,6 +258,10 @@ func getSetPasswordStatement(ctx context.Context, meta interface{}, retainPasswo
 }
 
 func UpdateUser(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	if d.HasChange("host") && !d.HasChange("user") {
+		return UpdateUserHost(ctx, d, meta)
+	}
+
 	db, err := getDatabaseFromMeta(ctx, meta)
 	if err != nil {
 		return diag.FromErr(err)
@@ -339,6 +342,33 @@ func UpdateUser(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 		}
 	}
 
+	return nil
+}
+
+func UpdateUserHost(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	db, err := getDatabaseFromMeta(ctx, meta)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	oldHost, newHost := d.GetChange("host")
+	user := d.Get("user").(string)
+
+	stmtSQL := "RENAME USER ?@? TO ?@?"
+
+	log.Println("[DEBUG] Executing statement:", stmtSQL)
+
+	_, err = db.ExecContext(ctx, stmtSQL,
+		user,
+		oldHost.(string),
+		user,
+		newHost.(string))
+
+	if err != nil {
+		return diag.Errorf("failed renaming user: %v", err)
+	}
+
+	d.SetId(fmt.Sprintf("%s@%s", user, newHost.(string)))
 	return nil
 }
 
